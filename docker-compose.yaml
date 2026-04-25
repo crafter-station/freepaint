@@ -1,9 +1,13 @@
 services:
   app:
     build: .
-    ports:
-      - "3000:3000"
     environment:
       HOSTNAME: "0.0.0.0"
       PORT: "3000"
       DATABASE_URL: "${DATABASE_URL}"
+    networks:
+      - dokploy-network
+
+networks:
+  dokploy-network:
+    external: true
