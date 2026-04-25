@@ -1,65 +1,117 @@
-import Image from "next/image";
+"use client";
+
+import { useEffect, useState, useCallback } from "react";
+import { PaintCanvas } from "@/components/paint-canvas";
+import { Gallery } from "@/components/gallery";
+import { getFingerprint } from "@/lib/fingerprint";
+import { Painting } from "@/db/schema";
 
 export default function Home() {
+  const [fingerprint, setFingerprint] = useState<string | null>(null);
+  const [paintings, setPaintings] = useState<Painting[]>([]);
+  const [current, setCurrent] = useState<Painting | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [showGallery, setShowGallery] = useState(true);
+
+  useEffect(() => {
+    getFingerprint().then(setFingerprint);
+  }, []);
+
+  const loadPaintings = useCallback(async () => {
+    if (!fingerprint) return;
+    const res = await fetch(`/api/paintings?fingerprint=${fingerprint}`);
+    const data = await res.json();
+    setPaintings(data);
+  }, [fingerprint]);
+
+  useEffect(() => {
+    loadPaintings();
+  }, [loadPaintings]);
+
+  const handleSave = async (data: string) => {
+    if (!fingerprint) return;
+    setIsSaving(true);
+
+    try {
+      if (current) {
+        await fetch("/api/paintings", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: current.id,
+            fingerprint,
+            data,
+          }),
+        });
+      } else {
+        const name = prompt("Name your painting:", "Untitled") || "Untitled";
+        const res = await fetch("/api/paintings", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ fingerprint, name, data }),
+        });
+        const saved = await res.json();
+        setCurrent(saved);
+      }
+      await loadPaintings();
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!fingerprint) return;
+    await fetch("/api/paintings", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, fingerprint }),
+    });
+    if (current?.id === id) setCurrent(null);
+    await loadPaintings();
+  };
+
+  const handleNew = () => {
+    setCurrent(null);
+  };
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
+    <div className="h-screen flex flex-col">
+      {/* Header */}
+      <header className="flex items-center justify-between px-4 py-2 bg-white border-b border-neutral-300 shrink-0">
+        <h1 className="text-lg font-bold tracking-tight">FreePaint</h1>
+        <div className="flex items-center gap-2">
+          {current && (
+            <span className="text-sm text-neutral-500">{current.name}</span>
+          )}
+          <button
+            onClick={() => setShowGallery(!showGallery)}
+            className="px-3 py-1 text-sm bg-neutral-100 hover:bg-neutral-200 rounded cursor-pointer transition-colors"
+          >
+            {showGallery ? "Hide Gallery" : "My Paintings"}{" "}
+            {paintings.length > 0 && `(${paintings.length})`}
+          </button>
+        </div>
+      </header>
+
+      {/* Gallery */}
+      {showGallery && paintings.length > 0 && (
+        <Gallery
+          paintings={paintings}
+          onSelect={(p) => setCurrent(p)}
+          onDelete={handleDelete}
+          onNew={handleNew}
         />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+      )}
+
+      {/* Canvas */}
+      <div className="flex-1 min-h-0">
+        <PaintCanvas
+          key={current?.id || "new"}
+          onSave={handleSave}
+          initialData={current?.data}
+          isSaving={isSaving}
+        />
+      </div>
     </div>
   );
 }
